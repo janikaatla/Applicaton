@@ -1,0 +1,263 @@
+INSERT INTO <TABLE> (<COLUMN1>,<COLUMN2>) Values (val1,val2);
+<!-- TotalCount and Month wise count -->
+Select <ColumnName>, Count(*) as [TotalCount],
+
+count(case when(datediff(day,createdDate,getdate()))<=30 then 1 else null end) as oneMonthOld,
+
+count(case when(datediff(day,createdDate,getdate())>30 AND (datediff(day,createdDate,getdate()))<=60) then 1 else null end) as twoMonthsOld,
+
+count(case when(datediff(day,createdDate,getdate())>60 AND (datediff(day,createdDate,getdate()))<=90) then 1 else null end) as threeMonthsOld,
+
+count(case when(datediff(day,createdDate,getdate()))>90 then 1 else null end) as aboveThreeMonthsOld
+
+ from <MSSQLTable> group by <ColumnName>;
+
+<!-- Update with another table value -->
+UPDATE <TABLE1>
+SET <TABLE1>.<COLUMN_A> = <TABLE2>.<COLUMN_A>
+FROM <TABLE1>
+INNER JOIN <TABLE2> ON <TABLE1>.<COLUMN_ID> = <TABLE2>.<COLUMN_ID>
+
+<!-- Delete duplicate row base given order by -->
+
+WITH RemoveDuplicates AS (SELECT 
+        <COLUMN_1>, 
+        <COLUMN_2>,
+	<COLUMN_3>,  
+        ROW_NUMBER() OVER (
+            PARTITION BY 
+                <COLUMN_2>,
+                <COLUMN_3>
+            ORDER BY 
+                <COLUMN_2>,
+                <COLUMN_3>
+        ) row_num
+     FROM <TABLE1> 
+	 )
+DELETE FROM RemoveDuplicates
+WHERE row_num > 1;
+
+WITH cteRowNum AS (
+SELECT *,
+       DENSE_RANK() OVER(PARTITION BY deptId ORDER BY Sal DESC) AS RowNum
+    FROM #Employee
+ )
+ SELECT *
+ FROM cteRowNum
+ WHERE RowNum = 2;
+ 
+
+CREATE FUNCTION <FUNCTION1>
+(
+    @FK_ID INT -- The foreign key from TableA which is used 
+               -- to fetch corresponding records
+)
+RETURNS VARCHAR(8000)
+AS
+BEGIN
+DECLARE @Val VARCHAR(8000);
+
+SELECT @Val =
+    COALESCE(@Val + ', ', '') + CAST(<COLUMN1> AS varchar(100)) 
+FROM <TABLE1> tab1
+WHERE ID in (select ID from <TABLE2> where DocId= @FK_ID);
+--WHERE tab1.LocId = @FK_ID;
+
+RETURN 
+(
+    SELECT @Val
+)
+END
+
+
+<!-- Procedure -->
+IF EXISTS (SELECT * FROM sys.objects WHERE type = 'P' AND name = '<PROCEDURE_NAME>')
+DROP PROCEDURE <PROCEDURE_NAME>
+Go
+
+CREATE PROCEDURE <PROCEDURE_NAME> 
+
+@Query_ID varchar(20) = ''
+,@Query_dateofcreated_from varchar(20) = ''
+,@Query_dateofcreated_to varchar(20) = ''
+,@Query_nameContains varchar(20) = ''
+,@IDList
+,@OrderBy varchar(max) = ''
+,@PageNumber varchar(10) = '1'
+,@RowsPerPage varchar(10) = '50'
+
+
+AS
+BEGIN
+	-- SET NOCOUNT ON added to prevent extra result sets from
+	-- interfering with SELECT statements.
+	SET NOCOUNT ON;
+	
+	DECLARE @strSql varchar(max);
+	DECLARE @and varchar(10);
+	DECLARE @Query_Values varchar(max);
+	DECLARE @MapNames VARCHAR(max);
+	DECLARE @AssignValues VARCHAR(max);
+	DECLARE @firstChar VARCHAR(2);
+	DECLARE @lastChar VARCHAR(2);
+	DECLARE @IDs VARCHAR(max);
+	
+	SET @Query_Values=@IDList;
+	print @IDList;
+	SET @IDList = REPLACE(@Query_Values,'#',',');
+	SET @firstChar= substring(@IDList, 1, 1) ;
+	SET @lastChar= substring(@IDList, len(@IDList), len(@IDList)) ;
+	if(@firstChar = ',' and @lastChar = ',')
+	
+	begin
+	SET @IDList =substring(@IDList, 2, len(@IDList)-2) ;
+	end
+	else if(@firstChar = ',')
+	begin
+	SET @IDList =substring(@IDList, 2, len(@IDList)-1) ;
+	end
+	else if(@lastChar = ',')
+	begin
+	SET @IDList =substring(@IDList, 1, len(@IDList)-1) ;
+	end
+	
+	SET @AssignValues = 'STUFF((SELECT DISTINCT '', '' + COALESCE(DisplayName, '''','''') FROM <TABLE_3> inView Where inView.FKID=outView.ID'
+	if(@IDList != '')
+	begin
+		SET @AssignValues = @AssignValues+' and (inView.ID in (Select FKID from <TABLE_4> where ID  in ('+ @IDList +' )))';
+	end
+	
+	SET @MapNames='STUFF((SELECT DISTINCT '', '' + COALESCE(CAST(NAME as varchar(max)), '''','''') FROM <TABLE2> inView Where inView.FKID=outView.ID';
+	SET @MapNames = @MapNames+' FOR XML PATH(''''), TYPE).value(''.[1]'', ''nvarchar(max)''),1,2,'''')';
+	
+	SET @strSql = 'select  *  from (select distinct ID, <COLUMN1> CONVERT(VARCHAR(max), DATEADD(d,0,CreatedDate), 107) as CreatedDate , Count(*) over () AS TotalCount';
+	
+	SET @strSql = @strSql + ', RowsPerPage=' + @RowsPerPage + ',PageNumber=' + @PageNumber;
+
+	if(@OrderBy != '')
+	begin
+
+	SET @strSql = @strSql + ',ROW_NUMBER() OVER (' + @OrderBy + ') AS RowNum ';
+	end
+	else
+	begin
+	SET @strSql = @strSql + ',ROW_NUMBER() OVER (ORDER BY ID DESC) AS RowNum ';
+	end
+
+	SET @strSql = @strSql + ' from (SELECT Distinct ID, <COLUMN1> CONVERT(VARCHAR(max), DATEADD(d,0,CreatedDate), 107) as CreatedDate;
+	
+	SET @strSql = @strSql + ',('+@MapNames+') as AnotherTableMapNames';
+	
+	SET @strSql = @strSql + ',('+@AssignValues+') as AssignValues';
+	
+	SET @strSql = @strSql + ' FROM <TABEL1> as outView';
+
+	SET @and = ' WHERE ';
+	
+	if(@docQuery_DocID != '')
+	begin
+	SET @strSql = @strSql + ' ' + @and + ' ( ID  in ( ' + @Query_ID + ') )';
+	SET @and ='and';
+	end
+	
+	if(@Query_dateofcreated_from != '')
+	begin
+	SET @strSql = @strSql + ' ' + @and + ' ( CreatedDate  >=  ''' + CONVERT (VARCHAR(10),DATEADD(d,0,@Query_dateofcreated_from),120) + ''' )';
+	SET @and ='and';
+	end
+
+	if(@Query_dateofcreated_to != '')
+	begin
+	SET @strSql = @strSql + ' ' + @and + ' ( CreatedDate  <=  ''' + CONVERT (VARCHAR(10),DATEADD(d,0,@Query_dateofcreated_to),120) + ''' )';
+	SET @and ='and';
+	end
+
+	if(@Query_nameContains != '')
+	begin
+	SET @strSql = @strSql + ' ' + @and + '( Name like ''%'+ @Query_nameContains +'%'')';
+	SET @and ='and';
+	end
+	
+	SET @strSql = @strSql + '  ) as MainData';
+
+	SET @strSql = @strSql + '  ) as PaginationData';
+
+	SET @and='WHERE';
+
+
+	SET @strSql = @strSql + ' ' + @and + ' PaginationData.RowNum BETWEEN ';
+	SET @strSql = @strSql + convert(varchar,((convert(int,@PageNumber) - 1) * convert(int,@RowsPerPage)) + 1);
+	SET @strSql = @strSql + ' AND ' + convert(varchar,(convert(int,@RowsPerPage)*(convert(int,@PageNumber))));
+	print @strSql;
+
+	exec(@strSql);
+
+
+END
+GO
+
+
+Declare @Display_Name varchar(250)
+Declare @User_Type varchar(250)
+DECLARE UserTypeCursor cursor for (SELECT DisplayName,  UserType from <TABEL1>)
+Open UserTypeCursor
+Fetch Next from UserTypeCursor into @Display_Name,@User_Type
+while (@@FETCH_STATUS=0) 
+BEGIN
+	  
+	--print 'IF : We can Apply IF condition here for @Display_Name,@User_Type';
+	update <TABLE_2> SET UserType=''+@User_Type+'' where DisplayName=''+@Display_Name+'';
+	  
+	Fetch Next from UserTypeCursor into @Display_Name,@User_Type
+END
+print 'END LOOP :';
+Close UserTypeCursor
+
+DEALLOCATE UserTypeCursor
+	
+	
+	
+	
+String params = "{call " + stored_procedure + "(";
+		for(int varCount = 0; varCount < sqlParamNames.size(); varCount++){	    	
+			if(varCount == 0){
+				params = params + "?";
+			}
+			else{
+				params = params + ",?";
+			}
+		}
+		params = params + ",?";
+		params = params + ",?";
+		params = params + ",?";
+		System.out.println("params1 : "+params);
+
+	cs = con.prepareCall(params + ")}",ResultSet.TYPE_SCROLL_INSENSITIVE,ResultSet.CONCUR_READ_ONLY);
+	
+		Statement s = con.createStatement();
+		
+//		Statement statement = connection.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE,ResultSet.CONCUR_READ_ONLY);
+		//System.out.println("stored_procedure2 : "+stored_procedure);
+		ResultSet res = s.executeQuery("select PARAMETER_NAME from information_schema.parameters where specific_name='" + stored_procedure + "'");
+		int columnCount = 0;
+	    while (res.next()) {
+			for(int i=0;i < sqlParamNames.size(); i ++){
+				if(res.getString("PARAMETER_NAME").equalsIgnoreCase("@" + sqlParamNames.get(i)) ){
+					System.out.println("sqlParamNames.get(i) : "+ i + "  : " +sqlParamNames.get(i));
+					System.out.println("sqlParamValues.get(i) : "+ i + "  : " +sqlParamValues.get(i));
+					cs.setString(columnCount+1, sqlParamValues.get(i));
+//					System.out.println(res.getString("PARAMETER_NAME") + " : " + sqlParamValues.get(i));
+				}
+			}
+			columnCount = columnCount + 1;
+	     }
+	    System.out.println("columnCount : "+columnCount);
+	    
+	    cs.setString(columnCount - 2, orderBy);
+	    cs.setInt(columnCount - 1, pageNumber);
+	    cs.setInt(columnCount, rowsPerPage); 
+	    
+	    
+		ResultSet rs = cs.executeQuery();
+	
+
